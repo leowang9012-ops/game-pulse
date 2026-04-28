@@ -164,7 +164,9 @@ def generate_profile(df: pd.DataFrame, dataset_id: str, filename: str) -> dict:
 
 
 from app.api.predict import router as predict_router
+from app.api.analyze import router as analyze_router
 app.include_router(predict_router)
+app.include_router(analyze_router)
 
 
 if __name__ == "__main__":

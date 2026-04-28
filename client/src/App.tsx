@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout";
 import { UploadPage } from "./pages/UploadPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { PredictPage } from "./pages/PredictPage";
+import { AnalysisPage } from "./pages/AnalysisPage";
 import "./index.css";
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
         <Route index element={<UploadPage />} />
         <Route path="dashboard/:datasetId" element={<DashboardPage />} />
         <Route path="predict/:datasetId" element={<PredictPage />} />
+        <Route path="analyze/:datasetId" element={<AnalysisPage />} />
       </Route>
     </Routes>
   );

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { BarChart3, ArrowLeft, TrendingUp, Database } from "lucide-react";
+import { BarChart3, ArrowLeft, TrendingUp, Database, Microscope } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 const API_BASE = "http://localhost:8001";
@@ -69,12 +69,20 @@ export function DashboardPage() {
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">{profile.rows.toLocaleString()} 行 × {profile.columns_count} 列</p>
           </div>
-          <Link
-            to={`/predict/${datasetId}`}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
-          >
-            <TrendingUp className="w-4 h-4" /> 趋势预测
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              to={`/analyze/${datasetId}`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80"
+            >
+              <Microscope className="w-4 h-4" /> 深度分析
+            </Link>
+            <Link
+              to={`/predict/${datasetId}`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
+            >
+              <TrendingUp className="w-4 h-4" /> 趋势预测
+            </Link>
+          </div>
         </div>
       </header>
 

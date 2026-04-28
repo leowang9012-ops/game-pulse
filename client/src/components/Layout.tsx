@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { Activity, Upload, BarChart3, TrendingUp } from "lucide-react";
+import { Activity, Upload, BarChart3, TrendingUp, Microscope } from "lucide-react";
 
 export function Layout() {
   const location = useLocation();
@@ -22,7 +22,8 @@ export function Layout() {
           {[
             { label: "上传数据", path: "/", icon: Upload },
             { label: "数据看板", path: "/dashboard", icon: BarChart3, match: "/dashboard" },
-            { label: "趋势预测", path: "/predict", icon: TrendingUp, match: "/predict" },
+            { label: "深度分析", path: "/analyze", icon: Microscope, match: "/analyze" },
+          { label: "趋势预测", path: "/predict", icon: TrendingUp, match: "/predict" },
           ].map((item) => {
             const Icon = item.icon;
             const active = item.match
