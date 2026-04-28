@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { UploadPage } from "./pages/UploadPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -14,12 +14,12 @@ export default function App() {
         <Route index element={<DemoPage />} />
         <Route path="demo" element={<DemoPage />} />
         <Route path="upload" element={<UploadPage />} />
-        <Route path="dashboard/:datasetId" element={<DashboardPage />} />
-        <Route path="predict/:datasetId" element={<PredictPage />} />
-        <Route path="analyze/:datasetId" element={<AnalysisPage />} />
         <Route path="dashboard/demo" element={<DemoPage defaultTab="dashboard" />} />
         <Route path="predict/demo" element={<DemoPage defaultTab="predict" />} />
         <Route path="analyze/demo" element={<DemoPage defaultTab="analysis" />} />
+        <Route path="dashboard/:datasetId" element={<DashboardPage />} />
+        <Route path="predict/:datasetId" element={<PredictPage />} />
+        <Route path="analyze/:datasetId" element={<AnalysisPage />} />
       </Route>
     </Routes>
   );
