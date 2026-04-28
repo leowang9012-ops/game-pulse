@@ -17,6 +17,9 @@ export default function App() {
         <Route path="dashboard/:datasetId" element={<DashboardPage />} />
         <Route path="predict/:datasetId" element={<PredictPage />} />
         <Route path="analyze/:datasetId" element={<AnalysisPage />} />
+        <Route path="dashboard/demo" element={<DemoPage defaultTab="dashboard" />} />
+        <Route path="predict/demo" element={<DemoPage defaultTab="predict" />} />
+        <Route path="analyze/demo" element={<DemoPage defaultTab="analysis" />} />
       </Route>
     </Routes>
   );

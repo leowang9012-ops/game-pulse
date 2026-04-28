@@ -21,9 +21,9 @@ export function Layout() {
         <nav className="flex-1 px-3 py-4 space-y-0.5">
           {[
             { label: "上传数据", path: "/", icon: Upload },
-            { label: "数据看板", path: "/dashboard", icon: BarChart3, match: "/dashboard" },
-            { label: "深度分析", path: "/analyze", icon: Microscope, match: "/analyze" },
-          { label: "趋势预测", path: "/predict", icon: TrendingUp, match: "/predict" },
+            { label: "数据看板", path: "/dashboard/demo", icon: BarChart3, match: "/dashboard" },
+            { label: "深度分析", path: "/analyze/demo", icon: Microscope, match: "/analyze" },
+            { label: "趋势预测", path: "/predict/demo", icon: TrendingUp, match: "/predict" },
           ].map((item) => {
             const Icon = item.icon;
             const active = item.match
