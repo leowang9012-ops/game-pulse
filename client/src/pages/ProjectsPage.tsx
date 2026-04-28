@@ -199,7 +199,7 @@ function ProjectCard({
               {/* Re-upload */}
               <label className="flex items-center gap-1 px-3 py-1.5 text-xs bg-secondary rounded-lg hover:bg-primary/10 transition-colors cursor-pointer">
                 <Upload className="w-3 h-3" /> 更新数据
-                <input type="file" accept=".csv" className="hidden" onChange={e => {
+                <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => {
                   const f = e.target.files?.[0];
                   if (f) onUpload(project.id, f);
                   e.target.value = "";
@@ -229,7 +229,7 @@ function ProjectCard({
               ) : (
                 <><Upload className="w-4 h-4" /> 上传 CSV</>
               )}
-              <input type="file" accept=".csv" className="hidden" onChange={e => {
+              <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => {
                 const f = e.target.files?.[0];
                 if (f) onUpload(project.id, f);
                 e.target.value = "";

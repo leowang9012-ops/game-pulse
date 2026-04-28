@@ -137,6 +137,43 @@ export async function readFileWithEncoding(file: File): Promise<string> {
   return utf8Text; // fallback
 }
 
+// ── Excel Parser ──
+
+export async function parseExcel(buffer: ArrayBuffer): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(buffer, { type: "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  if (json.length === 0) return { headers: [], rows: [] };
+  
+  const headers = Object.keys(json[0]);
+  const rows = json.map(row => {
+    const r: Record<string, string> = {};
+    headers.forEach(h => {
+      const v = row[h];
+      r[h] = v == null ? "" : String(v);
+    });
+    return r;
+  });
+  
+  return { headers, rows };
+}
+
+// ── File Reader (auto-detect encoding for CSV, parse Excel directly) ──
+
+export async function readFileData(file: File): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  
+  if (ext === "xlsx" || ext === "xls") {
+    const buffer = await file.arrayBuffer();
+    return parseExcel(buffer);
+  }
+  
+  // CSV: auto-detect encoding
+  const text = await readFileWithEncoding(file);
+  return parseCSV(text);
+}
+
 // ── CSV Parser ──
 
 export function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
