@@ -11,7 +11,7 @@ from app.services.predictor import forecast_timeseries
 
 router = APIRouter(prefix="/api", tags=["prediction"])
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 UPLOADS_DIR = DATA_DIR / "uploads"
 
 
@@ -26,11 +26,11 @@ class PredictRequest(BaseModel):
 @router.post("/predict")
 async def predict(req: PredictRequest):
     """时序预测"""
-    parquet_path = UPLOADS_DIR / f"{req.dataset_id}.parquet"
-    if not parquet_path.exists():
+    csv_path = UPLOADS_DIR / f"{req.dataset_id}.csv"
+    if not csv_path.exists():
         raise HTTPException(404, "Dataset not found")
 
-    df = pd.read_parquet(parquet_path)
+    df = pd.read_csv(csv_path)
 
     if req.date_column not in df.columns:
         raise HTTPException(400, f"Date column '{req.date_column}' not found")

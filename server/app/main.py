@@ -45,29 +45,29 @@ async def upload_file(file: UploadFile = File(...)):
 
     # 保存文件
     dataset_id = f"ds_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-    save_path = UPLOADS_DIR / f"{dataset_id}{ext}"
+    raw_path = UPLOADS_DIR / f"{dataset_id}_raw{ext}"
 
     content = await file.read()
-    with open(save_path, "wb") as f:
+    with open(raw_path, "wb") as f:
         f.write(content)
 
     # 解析数据
     try:
         if ext == ".csv":
-            df = pd.read_csv(save_path)
+            df = pd.read_csv(raw_path)
         elif ext in [".xlsx", ".xls"]:
-            df = pd.read_excel(save_path)
+            df = pd.read_excel(raw_path)
         else:
-            df = pd.read_json(save_path)
+            df = pd.read_json(raw_path)
     except Exception as e:
         raise HTTPException(400, f"Failed to parse file: {str(e)}")
 
     # 生成数据概览
     profile = generate_profile(df, dataset_id, file.filename)
 
-    # 保存解析后的 parquet 以便后续快速读取
-    parquet_path = UPLOADS_DIR / f"{dataset_id}.parquet"
-    df.to_parquet(parquet_path, index=False)
+    # 保存解析后的标准化 CSV 以便后续快速读取
+    csv_path = UPLOADS_DIR / f"{dataset_id}.csv"
+    df.to_csv(csv_path, index=False)
 
     return {
         "dataset_id": dataset_id,
@@ -79,22 +79,22 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/api/datasets/{dataset_id}/profile")
 async def get_profile(dataset_id: str):
     """获取数据集概览"""
-    parquet_path = UPLOADS_DIR / f"{dataset_id}.parquet"
-    if not parquet_path.exists():
+    csv_path = UPLOADS_DIR / f"{dataset_id}.csv"
+    if not csv_path.exists():
         raise HTTPException(404, "Dataset not found")
 
-    df = pd.read_parquet(parquet_path)
+    df = pd.read_csv(csv_path)
     return generate_profile(df, dataset_id)
 
 
 @app.get("/api/datasets/{dataset_id}/preview")
 async def preview_data(dataset_id: str, rows: int = 50):
     """预览数据前 N 行"""
-    parquet_path = UPLOADS_DIR / f"{dataset_id}.parquet"
-    if not parquet_path.exists():
+    csv_path = UPLOADS_DIR / f"{dataset_id}.csv"
+    if not csv_path.exists():
         raise HTTPException(404, "Dataset not found")
 
-    df = pd.read_parquet(parquet_path)
+    df = pd.read_csv(csv_path)
     return {
         "columns": list(df.columns),
         "rows": json.loads(df.head(rows).to_json(orient="records")),
@@ -106,7 +106,9 @@ async def preview_data(dataset_id: str, rows: int = 50):
 async def list_datasets():
     """列出所有已上传的数据集"""
     datasets = []
-    for f in sorted(UPLOADS_DIR.glob("*.parquet"), reverse=True):
+    for f in sorted(UPLOADS_DIR.glob("*.csv"), reverse=True):
+        if f.stem.endswith("_raw"):
+            continue
         stat = f.stat()
         datasets.append({
             "dataset_id": f.stem,

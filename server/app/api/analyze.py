@@ -21,7 +21,7 @@ from app.services.game_analyzer import (
 
 router = APIRouter(prefix="/api/analyze", tags=["game-analysis"])
 
-UPLOADS_DIR = Path(__file__).parent.parent.parent / "data" / "uploads"
+UPLOADS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "uploads"
 
 
 class RetentionRequest(BaseModel):
@@ -50,10 +50,10 @@ class AnomalyRequest(BaseModel):
 
 
 def _load_dataset(dataset_id: str) -> pd.DataFrame:
-    path = UPLOADS_DIR / f"{dataset_id}.parquet"
+    path = UPLOADS_DIR / f"{dataset_id}.csv"
     if not path.exists():
         raise HTTPException(404, "Dataset not found")
-    return pd.read_parquet(path)
+    return pd.read_csv(path)
 
 
 @router.post("/retention")
