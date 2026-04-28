@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Activity, TrendingUp, Database, Microscope, GitBranch
 } from "lucide-react";
@@ -15,7 +16,15 @@ type Tab = "dashboard" | "predict" | "analysis";
 const tipStyle = { backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" } as const;
 
 export function DemoPage({ defaultTab }: { defaultTab?: Tab } = {}) {
+  const location = useLocation();
+  const tabFromUrl = location.pathname.includes("/predict") ? "predict"
+    : location.pathname.includes("/analyze") ? "analysis"
+    : "dashboard";
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab || "dashboard");
+
+  useEffect(() => {
+    setActiveTab(tabFromUrl);
+  }, [tabFromUrl]);
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "dashboard", label: "数据看板", icon: <Database className="w-4 h-4" /> },
     { id: "predict", label: "趋势预测", icon: <TrendingUp className="w-4 h-4" /> },
