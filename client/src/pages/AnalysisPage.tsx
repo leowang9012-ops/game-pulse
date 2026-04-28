@@ -5,23 +5,9 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Cell
 } from "recharts";
+import { getProjectData, getProjects } from "../lib/storage";
 
 const tipStyle = { backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" } as const;
-
-function loadProjectData(projectId: string) {
-  try {
-    const raw = localStorage.getItem(`gamepulse-data-${projectId}`);
-    if (!raw) return null;
-    return JSON.parse(raw) as { headers: string[]; rows: Record<string, string>[] };
-  } catch { return null; }
-}
-
-function getProjectName(projectId: string): string {
-  try {
-    const projects = JSON.parse(localStorage.getItem("gamepulse-projects") || "[]");
-    return projects.find((p: { id: string }) => p.id === projectId)?.name || projectId;
-  } catch { return projectId; }
-}
 
 function pearsonCorrelation(xs: number[], ys: number[]): number {
   const n = xs.length;
@@ -52,10 +38,13 @@ function detectAnomalies(values: number[]): { index: number; value: number; zsco
 export function AnalysisPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [data, setData] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
+  const [projectName, setProjectName] = useState("");
   const [activeTab, setActiveTab] = useState<"correlation" | "anomaly">("correlation");
 
   useEffect(() => {
-    if (projectId) setData(loadProjectData(projectId));
+    if (!projectId) return;
+    getProjectData(projectId).then(d => setData(d));
+    getProjects().then(ps => setProjectName(ps.find(x => x.id === projectId)?.name || projectId));
   }, [projectId]);
 
   const numericCols = useMemo(() => {
@@ -70,12 +59,11 @@ export function AnalysisPage() {
     if (!data) return null;
     for (const h of data.headers) {
       const sample = data.rows.slice(0, 5).map(r => r[h]);
-      if (sample.every(v => !isNaN(Date.parse(v)))) return h;
+      if (sample.every(v => !isNaN(Date.parse(v))) && sample.length > 0) return h;
     }
     return null;
   }, [data]);
 
-  // Correlation matrix
   const correlationMatrix = useMemo(() => {
     if (numericCols.length < 2) return [];
     const matrix: { col1: string; col2: string; r: number }[] = [];
@@ -91,9 +79,8 @@ export function AnalysisPage() {
     return matrix.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
   }, [numericCols, data]);
 
-  // Anomaly detection for each numeric column
   const anomalies = useMemo(() => {
-    if (!data || numericCols.length === 0) return {};
+    if (!data || numericCols.length === 0) return {} as Record<string, { index: number; value: number; zscore: number }[]>;
     const result: Record<string, { index: number; value: number; zscore: number }[]> = {};
     numericCols.forEach(col => {
       const vals = data.rows.map(r => Number(r[col])).filter(v => !isNaN(v));
@@ -102,18 +89,15 @@ export function AnalysisPage() {
     return result;
   }, [data, numericCols]);
 
-  // Time series for anomaly visualization
   const timeSeries = useMemo(() => {
     if (!data || !dateCol || numericCols.length === 0) return [];
     const sorted = [...data.rows].sort((a, b) => new Date(a[dateCol]).getTime() - new Date(b[dateCol]).getTime());
-    return sorted.map((r, i) => {
-      const point: Record<string, unknown> = { date: r[dateCol], index: i };
+    return sorted.map((r) => {
+      const point: Record<string, unknown> = { date: r[dateCol] };
       numericCols.forEach(c => { point[c] = Number(r[c]) || 0; });
       return point;
     });
   }, [data, dateCol, numericCols]);
-
-  const projectName = projectId ? getProjectName(projectId) : "";
 
   if (!data) {
     return (
@@ -134,57 +118,37 @@ export function AnalysisPage() {
             <ArrowLeft className="w-4 h-4" /> 返回项目列表
           </Link>
           <h1 className="text-xl font-bold font-display flex items-center gap-2">
-            <Microscope className="w-5 h-5 text-primary" />
-            深度分析 · {projectName}
+            <Microscope className="w-5 h-5 text-primary" /> 深度分析 · {projectName}
           </h1>
         </div>
       </header>
 
       <div className="max-w-[1400px] mx-auto px-8 py-6 space-y-6">
-        {/* Tabs */}
         <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab("correlation")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              activeTab === "correlation" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"
-            }`}
-          >
+          <button onClick={() => setActiveTab("correlation")} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeTab === "correlation" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"}`}>
             <GitBranch className="w-4 h-4" /> 相关性分析
           </button>
-          <button
-            onClick={() => setActiveTab("anomaly")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              activeTab === "anomaly" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"
-            }`}
-          >
+          <button onClick={() => setActiveTab("anomaly")} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeTab === "anomaly" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"}`}>
             <Database className="w-4 h-4" /> 异常检测
           </button>
         </div>
 
-        {/* Correlation */}
         {activeTab === "correlation" && (
           <div className="space-y-6">
             {correlationMatrix.length > 0 ? (
               <>
                 <div className="bg-card border border-border rounded-xl p-5">
-                  <h3 className="text-sm font-medium mb-4">相关性矩阵（Top 强相关）</h3>
+                  <h3 className="text-sm font-medium mb-4">相关性矩阵</h3>
                   <div className="h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={correlationMatrix.slice(0, 15).map(c => ({
-                        name: `${c.col1} ↔ ${c.col2}`,
-                        r: Math.abs(c.r),
-                        fullR: c.r,
-                      }))} layout="vertical">
+                      <BarChart data={correlationMatrix.slice(0, 15).map(c => ({ name: `${c.col1} ↔ ${c.col2}`, r: Math.abs(c.r) }))} layout="vertical">
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 5% 16%)" />
                         <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} />
                         <YAxis type="category" dataKey="name" width={180} tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} />
-                        <Tooltip
-                          contentStyle={tipStyle}
-                          formatter={(value: unknown) => [`${value}`, "相关系数 |r|"]}
-                        />
+                        <Tooltip contentStyle={tipStyle} formatter={(v: unknown) => [`${v}`, "|r|"]} />
                         <Bar dataKey="r" radius={[0, 4, 4, 0]}>
-                          {correlationMatrix.slice(0, 15).map((entry, index) => (
-                            <Cell key={index} fill={Math.abs(entry.r) > 0.7 ? "hsl(0 70% 60%)" : Math.abs(entry.r) > 0.4 ? "hsl(47 90% 55%)" : "hsl(240 70% 60%)"} />
+                          {correlationMatrix.slice(0, 15).map((entry, i) => (
+                            <Cell key={i} fill={Math.abs(entry.r) > 0.7 ? "hsl(0 70% 60%)" : Math.abs(entry.r) > 0.4 ? "hsl(47 90% 55%)" : "hsl(240 70% 60%)"} />
                           ))}
                         </Bar>
                       </BarChart>
@@ -193,48 +157,29 @@ export function AnalysisPage() {
                 </div>
 
                 <div className="bg-card border border-border rounded-xl overflow-hidden">
-                  <div className="px-5 py-3 border-b border-border">
-                    <h3 className="text-sm font-medium">相关性详情</h3>
-                  </div>
+                  <div className="px-5 py-3 border-b border-border"><h3 className="text-sm font-medium">相关性详情</h3></div>
                   <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border/50">
-                        <th className="px-5 py-2.5 text-left text-muted-foreground">字段 1</th>
-                        <th className="px-5 py-2.5 text-left text-muted-foreground">字段 2</th>
-                        <th className="px-5 py-2.5 text-right text-muted-foreground">相关系数 r</th>
-                        <th className="px-5 py-2.5 text-center text-muted-foreground">强度</th>
-                      </tr>
-                    </thead>
+                    <thead><tr className="border-b border-border/50"><th className="px-5 py-2.5 text-left text-muted-foreground">字段 1</th><th className="px-5 py-2.5 text-left text-muted-foreground">字段 2</th><th className="px-5 py-2.5 text-right text-muted-foreground">r</th><th className="px-5 py-2.5 text-center text-muted-foreground">强度</th></tr></thead>
                     <tbody>
                       {correlationMatrix.map((c, i) => {
                         const absR = Math.abs(c.r);
                         const strength = absR > 0.7 ? "强" : absR > 0.4 ? "中" : "弱";
                         const color = absR > 0.7 ? "text-destructive" : absR > 0.4 ? "text-warning" : "text-muted-foreground";
-                        return (
-                          <tr key={i} className="border-b border-border/20 hover:bg-secondary/20">
-                            <td className="px-5 py-2.5 font-medium">{c.col1}</td>
-                            <td className="px-5 py-2.5 font-medium">{c.col2}</td>
-                            <td className="px-5 py-2.5 text-right tabular-nums">{c.r}</td>
-                            <td className={`px-5 py-2.5 text-center font-medium ${color}`}>{strength}</td>
-                          </tr>
-                        );
+                        return <tr key={i} className="border-b border-border/20 hover:bg-secondary/20"><td className="px-5 py-2.5 font-medium">{c.col1}</td><td className="px-5 py-2.5 font-medium">{c.col2}</td><td className="px-5 py-2.5 text-right tabular-nums">{c.r}</td><td className={`px-5 py-2.5 text-center font-medium ${color}`}>{strength}</td></tr>;
                       })}
                     </tbody>
                   </table>
                 </div>
               </>
-            ) : (
-              <p className="text-muted-foreground">需要至少 2 个数值字段才能进行相关性分析</p>
-            )}
+            ) : <p className="text-muted-foreground">需要至少 2 个数值字段</p>}
           </div>
         )}
 
-        {/* Anomaly Detection */}
         {activeTab === "anomaly" && (
           <div className="space-y-6">
             {timeSeries.length > 0 && numericCols.length > 0 && (
               <div className="bg-card border border-border rounded-xl p-5">
-                <h3 className="text-sm font-medium mb-4">趋势图（异常点标红）</h3>
+                <h3 className="text-sm font-medium mb-4">趋势图</h3>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={timeSeries}>

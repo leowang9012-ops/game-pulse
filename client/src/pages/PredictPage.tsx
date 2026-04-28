@@ -6,29 +6,19 @@ import {
   ResponsiveContainer, Area, AreaChart
 } from "recharts";
 
+import { getProjectData, getProjects } from "../lib/storage";
+
 const tipStyle = { backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" } as const;
-
-function loadProjectData(projectId: string) {
-  try {
-    const raw = localStorage.getItem(`gamepulse-data-${projectId}`);
-    if (!raw) return null;
-    return JSON.parse(raw) as { headers: string[]; rows: Record<string, string>[] };
-  } catch { return null; }
-}
-
-function getProjectName(projectId: string): string {
-  try {
-    const projects = JSON.parse(localStorage.getItem("gamepulse-projects") || "[]");
-    return projects.find((p: { id: string }) => p.id === projectId)?.name || projectId;
-  } catch { return projectId; }
-}
 
 export function PredictPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [data, setData] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
+  const [projectName, setProjectName] = useState("");
 
   useEffect(() => {
-    if (projectId) setData(loadProjectData(projectId));
+    if (!projectId) return;
+    getProjectData(projectId).then(d => setData(d));
+    getProjects().then(ps => setProjectName(ps.find(x => x.id === projectId)?.name || projectId));
   }, [projectId]);
 
   const dateCol = useMemo(() => {
@@ -95,7 +85,7 @@ export function PredictPage() {
     return { mean: +mean.toFixed(1), min: +min.toFixed(1), max: +max.toFixed(1), std: +std.toFixed(1), cv: +cv.toFixed(1) };
   }, [data, selectedCol]);
 
-  const projectName = projectId ? getProjectName(projectId) : "";
+
 
   if (!data) {
     return (

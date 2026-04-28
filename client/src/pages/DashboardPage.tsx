@@ -1,29 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { BarChart3, ArrowLeft, TrendingUp, Database, Microscope } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+import { getProjectData, getProjects } from "../lib/storage";
 
 const tipStyle = { backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" } as const;
-
-interface ProjectData {
-  headers: string[];
-  rows: Record<string, string>[];
-}
-
-function loadProjectData(projectId: string): ProjectData | null {
-  try {
-    const raw = localStorage.getItem(`gamepulse-data-${projectId}`);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch { return null; }
-}
-
-function getProjectName(projectId: string): string {
-  try {
-    const projects = JSON.parse(localStorage.getItem("gamepulse-projects") || "[]");
-    return projects.find((p: { id: string }) => p.id === projectId)?.name || projectId;
-  } catch { return projectId; }
-}
 
 function detectNumericColumns(headers: string[], rows: Record<string, string>[]): string[] {
   return headers.filter(h => {
@@ -35,8 +16,7 @@ function detectNumericColumns(headers: string[], rows: Record<string, string>[])
 function detectDateColumn(headers: string[], rows: Record<string, string>[]): string | null {
   for (const h of headers) {
     const sample = rows.slice(0, 5).map(r => r[h]);
-    const isDate = sample.every(v => !isNaN(Date.parse(v)));
-    if (isDate && sample.length > 0) return h;
+    if (sample.every(v => !isNaN(Date.parse(v))) && sample.length > 0) return h;
   }
   return null;
 }
@@ -51,21 +31,33 @@ function computeStats(values: number[]) {
   return { mean: +mean.toFixed(2), min: +min.toFixed(2), max: +max.toFixed(2), std: +Math.sqrt(variance).toFixed(2) };
 }
 
+function buildHistogram(values: number[], binCount: number) {
+  if (values.length === 0) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const step = (max - min) / binCount || 1;
+  return Array.from({ length: binCount }, (_, i) => {
+    const lo = min + i * step;
+    const hi = lo + step;
+    const count = values.filter(v => v >= lo && (i === binCount - 1 ? v <= hi : v < hi)).length;
+    return { label: lo.toFixed(0), count };
+  });
+}
+
 export function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [data, setData] = useState<ProjectData | null>(null);
+  const [data, setData] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
+  const [projectName, setProjectName] = useState("");
 
   useEffect(() => {
     if (!projectId) return;
-    const d = loadProjectData(projectId);
-    setData(d);
+    getProjectData(projectId).then(d => setData(d));
+    getProjects().then(ps => setProjectName(ps.find(x => x.id === projectId)?.name || projectId));
   }, [projectId]);
 
   const numericCols = useMemo(() => data ? detectNumericColumns(data.headers, data.rows) : [], [data]);
   const dateCol = useMemo(() => data ? detectDateColumn(data.headers, data.rows) : null, [data]);
-  const projectName = projectId ? getProjectName(projectId) : "";
 
-  // Build time series if date column exists
   const timeSeries = useMemo(() => {
     if (!data || !dateCol || numericCols.length === 0) return [];
     const sorted = [...data.rows].sort((a, b) => new Date(a[dateCol]).getTime() - new Date(b[dateCol]).getTime());
@@ -76,9 +68,7 @@ export function DashboardPage() {
     });
   }, [data, dateCol, numericCols]);
 
-  if (!projectId) {
-    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">请选择项目</div>;
-  }
+  if (!projectId) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">请选择项目</div>;
 
   if (!data) {
     return (
@@ -100,22 +90,15 @@ export function DashboardPage() {
               <ArrowLeft className="w-4 h-4" /> 返回项目列表
             </Link>
             <h1 className="text-xl font-bold font-display flex items-center gap-2">
-              <Database className="w-5 h-5 text-primary" />
-              {projectName}
+              <Database className="w-5 h-5 text-primary" /> {projectName}
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">{data.rows.length} 行 × {data.headers.length} 列</p>
           </div>
           <div className="flex gap-2">
-            <Link
-              to={`/analyze/${projectId}`}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80"
-            >
+            <Link to={`/analyze/${projectId}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-secondary-foreground text-sm font-medium hover:bg-secondary/80">
               <Microscope className="w-4 h-4" /> 深度分析
             </Link>
-            <Link
-              to={`/predict/${projectId}`}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"
-            >
+            <Link to={`/predict/${projectId}`} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
               <TrendingUp className="w-4 h-4" /> 趋势预测
             </Link>
           </div>
@@ -123,7 +106,6 @@ export function DashboardPage() {
       </header>
 
       <div className="max-w-[1400px] mx-auto px-8 py-6 space-y-6">
-        {/* KPI Summary */}
         {numericCols.length > 0 && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {numericCols.slice(0, 4).map(col => {
@@ -139,7 +121,6 @@ export function DashboardPage() {
           </div>
         )}
 
-        {/* Time Series Chart */}
         {timeSeries.length > 0 && numericCols.length > 0 && (
           <div className="bg-card border border-border rounded-xl p-5">
             <h3 className="text-sm font-medium mb-4">趋势图</h3>
@@ -163,7 +144,6 @@ export function DashboardPage() {
           </div>
         )}
 
-        {/* Numeric Distributions */}
         {numericCols.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {numericCols.map(col => {
@@ -196,7 +176,6 @@ export function DashboardPage() {
           </div>
         )}
 
-        {/* Data Table */}
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-border flex items-center justify-between">
             <h3 className="text-sm font-medium">数据预览</h3>
@@ -206,19 +185,13 @@ export function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/50">
-                  {data.headers.map(h => (
-                    <th key={h} className="px-4 py-2.5 text-left text-muted-foreground font-medium whitespace-nowrap">{h}</th>
-                  ))}
+                  {data.headers.map(h => <th key={h} className="px-4 py-2.5 text-left text-muted-foreground font-medium whitespace-nowrap">{h}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {data.rows.slice(0, 50).map((row, i) => (
                   <tr key={i} className="border-b border-border/20 hover:bg-secondary/20">
-                    {data.headers.map(h => (
-                      <td key={h} className="px-4 py-2 whitespace-nowrap text-muted-foreground max-w-[200px] truncate">
-                        {row[h]}
-                      </td>
-                    ))}
+                    {data.headers.map(h => <td key={h} className="px-4 py-2 whitespace-nowrap text-muted-foreground max-w-[200px] truncate">{row[h]}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -228,19 +201,4 @@ export function DashboardPage() {
       </div>
     </div>
   );
-}
-
-function buildHistogram(values: number[], binCount: number) {
-  if (values.length === 0) return [];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const step = (max - min) / binCount || 1;
-  const bins: { label: string; count: number }[] = [];
-  for (let i = 0; i < binCount; i++) {
-    const lo = min + i * step;
-    const hi = lo + step;
-    const count = values.filter(v => v >= lo && (i === binCount - 1 ? v <= hi : v < hi)).length;
-    bins.push({ label: lo.toFixed(0), count });
-  }
-  return bins;
 }

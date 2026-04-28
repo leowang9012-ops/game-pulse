@@ -2,51 +2,22 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Upload, FolderOpen, Trash2, BarChart3, TrendingUp,
-  Microscope, Plus, FileSpreadsheet, Clock
+  Microscope, FileSpreadsheet, Clock
 } from "lucide-react";
-
-interface Project {
-  id: string;
-  name: string;
-  filename: string;
-  rows: number;
-  columns: string[];
-  createdAt: string;
-}
-
-const STORAGE_KEY = "gamepulse-projects";
-
-function getProjects(): Project[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-  } catch { return []; }
-}
-
-function saveProjects(projects: Project[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-}
-
-function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = text.trim().split("\n");
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
-  const rows = lines.slice(1).map(line => {
-    const vals = line.split(",").map(v => v.trim().replace(/^"|"$/g, ""));
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => row[h] = vals[i] || "");
-    return row;
-  });
-  return { headers, rows };
-}
+import {
+  getProjects, saveProject, deleteProject as deleteProj,
+  saveProjectData, parseCSV, type Project
+} from "../lib/storage";
 
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    setProjects(getProjects());
+    getProjects().then(p => { setProjects(p); setLoading(false); });
   }, []);
 
   const handleFile = useCallback(async (file: File) => {
@@ -66,12 +37,9 @@ export function ProjectsPage() {
         createdAt: new Date().toISOString(),
       };
 
-      // Store data
-      localStorage.setItem(`gamepulse-data-${id}`, JSON.stringify({ headers, rows }));
-
-      const updated = [project, ...getProjects()];
-      saveProjects(updated);
-      setProjects(updated);
+      await saveProjectData({ id, headers, rows });
+      await saveProject(project);
+      setProjects(prev => [project, ...prev]);
     } catch (err) {
       alert(`上传失败: ${err}`);
     } finally {
@@ -79,12 +47,10 @@ export function ProjectsPage() {
     }
   }, []);
 
-  const deleteProject = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm("确定删除此项目？")) return;
-    localStorage.removeItem(`gamepulse-data-${id}`);
-    const updated = getProjects().filter(p => p.id !== id);
-    saveProjects(updated);
-    setProjects(updated);
+    await deleteProj(id);
+    setProjects(prev => prev.filter(p => p.id !== id));
   };
 
   return (
@@ -120,6 +86,7 @@ export function ProjectsPage() {
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) handleFile(file);
+              e.target.value = "";
             }}
           />
           {uploading ? (
@@ -128,7 +95,7 @@ export function ProjectsPage() {
             <>
               <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
               <p className="font-medium">拖拽 CSV 文件到这里，或点击选择</p>
-              <p className="text-xs text-muted-foreground mt-1">每个文件会创建为一个独立项目</p>
+              <p className="text-xs text-muted-foreground mt-1">支持大文件（最大 50MB）</p>
             </>
           )}
         </div>
@@ -184,7 +151,7 @@ export function ProjectsPage() {
                   <div>
                     <p className="font-medium">{p.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {p.rows} 行 · {p.columns.length} 列 · {p.filename}
+                      {p.rows.toLocaleString()} 行 · {p.columns.length} 列 · {p.filename}
                     </p>
                     <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
                       <Clock className="w-3 h-3" /> {new Date(p.createdAt).toLocaleDateString("zh-CN")}
@@ -211,7 +178,7 @@ export function ProjectsPage() {
                     <Microscope className="w-3 h-3" /> 分析
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }}
                     className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -222,7 +189,7 @@ export function ProjectsPage() {
           </div>
         )}
 
-        {projects.length === 0 && (
+        {!loading && projects.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p>还没有上传的项目</p>
