@@ -1,429 +1,272 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { BarChart3, ArrowLeft, Loader2, TrendingUp, AlertTriangle, GitBranch, Activity } from "lucide-react";
+import { Microscope, ArrowLeft, Database, GitBranch } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar, ScatterChart, Scatter, Cell
+  ResponsiveContainer, BarChart, Bar, Cell
 } from "recharts";
 
-const API_BASE = "http://localhost:8001";
+const tipStyle = { backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" } as const;
 
-interface Profile {
-  dataset_id: string;
-  filename: string;
-  columns: { name: string; dtype: string; is_date_candidate?: boolean }[];
-  numeric_columns: string[];
-  date_candidates: string[];
+function loadProjectData(projectId: string) {
+  try {
+    const raw = localStorage.getItem(`gamepulse-data-${projectId}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as { headers: string[]; rows: Record<string, string>[] };
+  } catch { return null; }
 }
 
-type AnalysisType = "retention" | "revenue" | "correlation" | "anomaly";
+function getProjectName(projectId: string): string {
+  try {
+    const projects = JSON.parse(localStorage.getItem("gamepulse-projects") || "[]");
+    return projects.find((p: { id: string }) => p.id === projectId)?.name || projectId;
+  } catch { return projectId; }
+}
+
+function pearsonCorrelation(xs: number[], ys: number[]): number {
+  const n = xs.length;
+  if (n < 3) return 0;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let num = 0, dx2 = 0, dy2 = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx;
+    const dy = ys[i] - my;
+    num += dx * dy;
+    dx2 += dx * dx;
+    dy2 += dy * dy;
+  }
+  const denom = Math.sqrt(dx2 * dy2);
+  return denom === 0 ? 0 : +(num / denom).toFixed(3);
+}
+
+function detectAnomalies(values: number[]): { index: number; value: number; zscore: number }[] {
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const std = Math.sqrt(values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length);
+  if (std === 0) return [];
+  return values
+    .map((v, i) => ({ index: i, value: v, zscore: Math.abs((v - mean) / std) }))
+    .filter(a => a.zscore > 2);
+}
 
 export function AnalysisPage() {
-  const { datasetId } = useParams<{ datasetId: string }>();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [activeTab, setActiveTab] = useState<AnalysisType>("retention");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
-
-  // Form states
-  const [userCol, setUserCol] = useState("");
-  const [dateCol, setDateCol] = useState("");
-  const [amountCol, setAmountCol] = useState("");
-  const [corrCols, setCorrCols] = useState<string[]>([]);
-  const [anomalyCol, setAnomalyCol] = useState("");
+  const { projectId } = useParams<{ projectId: string }>();
+  const [data, setData] = useState<{ headers: string[]; rows: Record<string, string>[] } | null>(null);
+  const [activeTab, setActiveTab] = useState<"correlation" | "anomaly">("correlation");
 
   useEffect(() => {
-    if (!datasetId) return;
-    fetch(`${API_BASE}/api/datasets/${datasetId}/profile`)
-      .then(r => r.json())
-      .then((p: Profile) => {
-        setProfile(p);
-        if (p.date_candidates.length > 0) setDateCol(p.date_candidates[0]);
-        if (p.numeric_columns.length > 0) {
-          setUserCol(p.numeric_columns[0]);
-          setAmountCol(p.numeric_columns[0]);
-          setAnomalyCol(p.numeric_columns[0]);
-          setCorrCols(p.numeric_columns.slice(0, Math.min(5, p.numeric_columns.length)));
-        }
-      });
-  }, [datasetId]);
+    if (projectId) setData(loadProjectData(projectId));
+  }, [projectId]);
 
-  const runAnalysis = async () => {
-    if (!datasetId) return;
-    setLoading(true);
-    setResult(null);
+  const numericCols = useMemo(() => {
+    if (!data) return [];
+    return data.headers.filter(h => {
+      const vals = data.rows.map(r => Number(r[h])).filter(v => !isNaN(v));
+      return vals.length > data.rows.length * 0.5;
+    });
+  }, [data]);
 
-    try {
-      let body: Record<string, unknown> = { dataset_id: datasetId };
-      let endpoint = "";
-
-      switch (activeTab) {
-        case "retention":
-          endpoint = "retention";
-          body = { ...body, user_column: userCol, date_column: dateCol };
-          break;
-        case "revenue":
-          endpoint = "revenue";
-          body = { ...body, user_column: userCol, amount_column: amountCol, date_column: dateCol || undefined };
-          break;
-        case "correlation":
-          endpoint = "correlation";
-          body = { ...body, columns: corrCols };
-          break;
-        case "anomaly":
-          endpoint = "anomaly";
-          body = { ...body, value_column: anomalyCol, method: "iqr" };
-          break;
-      }
-
-      const res = await fetch(`${API_BASE}/api/analyze/${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      setResult(await res.json());
-    } catch (err) {
-      alert(`分析失败: ${err}`);
-    } finally {
-      setLoading(false);
+  const dateCol = useMemo(() => {
+    if (!data) return null;
+    for (const h of data.headers) {
+      const sample = data.rows.slice(0, 5).map(r => r[h]);
+      if (sample.every(v => !isNaN(Date.parse(v)))) return h;
     }
-  };
+    return null;
+  }, [data]);
 
-  const tabs: { id: AnalysisType; label: string; icon: React.ReactNode }[] = [
-    { id: "retention", label: "留存分析", icon: <Activity className="w-4 h-4" /> },
-    { id: "revenue", label: "收入指标", icon: <TrendingUp className="w-4 h-4" /> },
-    { id: "correlation", label: "相关性", icon: <GitBranch className="w-4 h-4" /> },
-    { id: "anomaly", label: "异常检测", icon: <AlertTriangle className="w-4 h-4" /> },
-  ];
+  // Correlation matrix
+  const correlationMatrix = useMemo(() => {
+    if (numericCols.length < 2) return [];
+    const matrix: { col1: string; col2: string; r: number }[] = [];
+    for (let i = 0; i < numericCols.length; i++) {
+      for (let j = i + 1; j < numericCols.length; j++) {
+        const xs = data!.rows.map(r => Number(r[numericCols[i]])).filter(v => !isNaN(v));
+        const ys = data!.rows.map(r => Number(r[numericCols[j]])).filter(v => !isNaN(v));
+        const minLen = Math.min(xs.length, ys.length);
+        const r = pearsonCorrelation(xs.slice(0, minLen), ys.slice(0, minLen));
+        matrix.push({ col1: numericCols[i], col2: numericCols[j], r });
+      }
+    }
+    return matrix.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  }, [numericCols, data]);
+
+  // Anomaly detection for each numeric column
+  const anomalies = useMemo(() => {
+    if (!data || numericCols.length === 0) return {};
+    const result: Record<string, { index: number; value: number; zscore: number }[]> = {};
+    numericCols.forEach(col => {
+      const vals = data.rows.map(r => Number(r[col])).filter(v => !isNaN(v));
+      result[col] = detectAnomalies(vals);
+    });
+    return result;
+  }, [data, numericCols]);
+
+  // Time series for anomaly visualization
+  const timeSeries = useMemo(() => {
+    if (!data || !dateCol || numericCols.length === 0) return [];
+    const sorted = [...data.rows].sort((a, b) => new Date(a[dateCol]).getTime() - new Date(b[dateCol]).getTime());
+    return sorted.map((r, i) => {
+      const point: Record<string, unknown> = { date: r[dateCol], index: i };
+      numericCols.forEach(c => { point[c] = Number(r[c]) || 0; });
+      return point;
+    });
+  }, [data, dateCol, numericCols]);
+
+  const projectName = projectId ? getProjectName(projectId) : "";
+
+  if (!data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">未找到项目数据</p>
+          <Link to="/" className="text-primary hover:underline text-sm">返回项目列表</Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border/50 sticky top-0 z-30 bg-background/80 backdrop-blur-xl">
         <div className="max-w-[1400px] mx-auto px-8 py-5">
-          <Link to={`/dashboard/${datasetId}`} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
-            <ArrowLeft className="w-4 h-4" /> 返回看板
+          <Link to="/" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
+            <ArrowLeft className="w-4 h-4" /> 返回项目列表
           </Link>
           <h1 className="text-xl font-bold font-display flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-primary" />
-            深度分析
+            <Microscope className="w-5 h-5 text-primary" />
+            深度分析 · {projectName}
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">留存、收入、相关性、异常值 — 游戏数据专项分析</p>
         </div>
       </header>
 
       <div className="max-w-[1400px] mx-auto px-8 py-6 space-y-6">
         {/* Tabs */}
         <div className="flex gap-2">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setResult(null); }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                activeTab === tab.id
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-card border border-border text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Config Panel */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <div className="flex flex-wrap items-end gap-4">
-            {activeTab === "retention" && (
-              <>
-                <SelectCol label="用户ID列" value={userCol} onChange={setUserCol} profile={profile} />
-                <SelectCol label="日期列" value={dateCol} onChange={setDateCol} profile={profile} showDateOnly />
-              </>
-            )}
-            {activeTab === "revenue" && (
-              <>
-                <SelectCol label="用户ID列" value={userCol} onChange={setUserCol} profile={profile} />
-                <SelectCol label="金额列" value={amountCol} onChange={setAmountCol} profile={profile} numericOnly />
-                <SelectCol label="日期列（可选）" value={dateCol} onChange={setDateCol} profile={profile} showDateOnly allowEmpty />
-              </>
-            )}
-            {activeTab === "correlation" && (
-              <MultiSelectCol label="选择数值列" values={corrCols} onChange={setCorrCols} profile={profile} />
-            )}
-            {activeTab === "anomaly" && (
-              <SelectCol label="检测列" value={anomalyCol} onChange={setAnomalyCol} profile={profile} numericOnly />
-            )}
-
-            <button
-              onClick={runAnalysis}
-              disabled={loading}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
-              {loading ? "分析中..." : "开始分析"}
-            </button>
-          </div>
-        </div>
-
-        {/* Results */}
-        {result && !("error" in result) && (
-          <>
-            {activeTab === "retention" && <RetentionResult data={result} />}
-            {activeTab === "revenue" && <RevenueResult data={result} />}
-            {activeTab === "correlation" && <CorrelationResult data={result} />}
-            {activeTab === "anomaly" && <AnomalyResult data={result} />}
-          </>
-        )}
-        {result && "error" in result && (
-          <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-5 text-destructive text-sm">
-            {(result as Record<string, unknown>).error as string}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// === Helper Components ===
-
-function SelectCol({ label, value, onChange, profile, numericOnly, showDateOnly, allowEmpty }: {
-  label: string; value: string; onChange: (v: string) => void; profile: Profile | null;
-  numericOnly?: boolean; showDateOnly?: boolean; allowEmpty?: boolean;
-}) {
-  let cols = profile?.columns || [];
-  if (numericOnly) cols = cols.filter(c => c.dtype === "int64" || c.dtype === "float64");
-  if (showDateOnly) cols = cols.filter(c => c.is_date_candidate || c.dtype === "object");
-
-  return (
-    <div>
-      <label className="text-xs text-muted-foreground block mb-1.5">{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)} className="bg-secondary border border-border rounded-lg px-3 py-2 text-sm min-w-[160px]">
-        {allowEmpty && <option value="">不选择</option>}
-        {cols.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-      </select>
-    </div>
-  );
-}
-
-function MultiSelectCol({ label, values, onChange, profile }: {
-  label: string; values: string[]; onChange: (v: string[]) => void; profile: Profile | null;
-}) {
-  const toggle = (col: string) => {
-    if (values.includes(col)) onChange(values.filter(v => v !== col));
-    else onChange([...values, col]);
-  };
-
-  return (
-    <div>
-      <label className="text-xs text-muted-foreground block mb-1.5">{label}</label>
-      <div className="flex flex-wrap gap-1.5">
-        {(profile?.numeric_columns || []).map(col => (
           <button
-            key={col}
-            onClick={() => toggle(col)}
-            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-              values.includes(col)
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-muted-foreground hover:text-foreground"
+            onClick={() => setActiveTab("correlation")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              activeTab === "correlation" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"
             }`}
           >
-            {col}
+            <GitBranch className="w-4 h-4" /> 相关性分析
           </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// === Result Components ===
-
-function RetentionResult({ data }: { data: Record<string, unknown> }) {
-  const d = data as { curve: { day: number; retention: number }[]; milestones: { label: string; avg_retention: number }[]; total_users: number; insights: string[] };
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="总用户" value={d.total_users.toLocaleString()} />
-        {(d.milestones || []).slice(0, 3).map(m => (
-          <StatCard key={m.label} label={`${m.label} 留存`} value={`${m.avg_retention}%`} />
-        ))}
-      </div>
-
-      <div className="bg-card border border-border rounded-xl p-5">
-        <h3 className="text-sm font-medium mb-4">留存曲线</h3>
-        <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={d.curve}>
-              <CartesianGrid strokeDasharray="none" stroke="hsl(240 5% 16%)" vertical={false} />
-              <XAxis dataKey="day" tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} tickLine={false} axisLine={false} unit="%" />
-              <Tooltip contentStyle={{ backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px", color: "hsl(240 5% 90%)" }} />
-              <Line type="monotone" dataKey="retention" stroke="hsl(240 70% 60%)" strokeWidth={2.5} dot={false} name="留存率" />
-            </LineChart>
-          </ResponsiveContainer>
+          <button
+            onClick={() => setActiveTab("anomaly")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              activeTab === "anomaly" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"
+            }`}
+          >
+            <Database className="w-4 h-4" /> 异常检测
+          </button>
         </div>
-      </div>
 
-      <InsightsPanel insights={d.insights} />
-    </div>
-  );
-}
+        {/* Correlation */}
+        {activeTab === "correlation" && (
+          <div className="space-y-6">
+            {correlationMatrix.length > 0 ? (
+              <>
+                <div className="bg-card border border-border rounded-xl p-5">
+                  <h3 className="text-sm font-medium mb-4">相关性矩阵（Top 强相关）</h3>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={correlationMatrix.slice(0, 15).map(c => ({
+                        name: `${c.col1} ↔ ${c.col2}`,
+                        r: Math.abs(c.r),
+                        fullR: c.r,
+                      }))} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 5% 16%)" />
+                        <XAxis type="number" domain={[0, 1]} tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} />
+                        <YAxis type="category" dataKey="name" width={180} tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} />
+                        <Tooltip
+                          contentStyle={tipStyle}
+                          formatter={(value: unknown) => [`${value}`, "相关系数 |r|"]}
+                        />
+                        <Bar dataKey="r" radius={[0, 4, 4, 0]}>
+                          {correlationMatrix.slice(0, 15).map((entry, index) => (
+                            <Cell key={index} fill={Math.abs(entry.r) > 0.7 ? "hsl(0 70% 60%)" : Math.abs(entry.r) > 0.4 ? "hsl(47 90% 55%)" : "hsl(240 70% 60%)"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
 
-function RevenueResult({ data }: { data: Record<string, unknown> }) {
-  const d = data as { total_revenue: number; arpu: number; arppu: number; pay_rate: number; paying_users: number; total_users: number; tier_distribution: Record<string, number>; insights: string[] };
-  const tierData = Object.entries(d.tier_distribution || {}).map(([name, value]) => ({ name, value }));
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="总收入" value={`¥${d.total_revenue.toLocaleString()}`} />
-        <StatCard label="ARPU" value={`¥${d.arpu}`} />
-        <StatCard label="ARPPU" value={`¥${d.arppu}`} />
-        <StatCard label="付费率" value={`${d.pay_rate}%`} />
-        <StatCard label="付费用户" value={`${d.paying_users} / ${d.total_users}`} />
-      </div>
-
-      {tierData.length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-4">付费分层分布</h3>
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={tierData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 5% 16%)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "hsl(240 5% 45%)" }} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} />
-                <Tooltip contentStyle={{ backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" }} />
-                <Bar dataKey="value" name="用户数" radius={[4, 4, 0, 0]}>
-                  {tierData.map((_, i) => (
-                    <Cell key={i} fill={["hsl(240 5% 50%)", "hsl(142 60% 45%)", "hsl(47 90% 55%)", "hsl(240 70% 60%)", "hsl(0 70% 55%)"][i] || "hsl(240 70% 60%)"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                <div className="bg-card border border-border rounded-xl overflow-hidden">
+                  <div className="px-5 py-3 border-b border-border">
+                    <h3 className="text-sm font-medium">相关性详情</h3>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border/50">
+                        <th className="px-5 py-2.5 text-left text-muted-foreground">字段 1</th>
+                        <th className="px-5 py-2.5 text-left text-muted-foreground">字段 2</th>
+                        <th className="px-5 py-2.5 text-right text-muted-foreground">相关系数 r</th>
+                        <th className="px-5 py-2.5 text-center text-muted-foreground">强度</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {correlationMatrix.map((c, i) => {
+                        const absR = Math.abs(c.r);
+                        const strength = absR > 0.7 ? "强" : absR > 0.4 ? "中" : "弱";
+                        const color = absR > 0.7 ? "text-destructive" : absR > 0.4 ? "text-warning" : "text-muted-foreground";
+                        return (
+                          <tr key={i} className="border-b border-border/20 hover:bg-secondary/20">
+                            <td className="px-5 py-2.5 font-medium">{c.col1}</td>
+                            <td className="px-5 py-2.5 font-medium">{c.col2}</td>
+                            <td className="px-5 py-2.5 text-right tabular-nums">{c.r}</td>
+                            <td className={`px-5 py-2.5 text-center font-medium ${color}`}>{strength}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="text-muted-foreground">需要至少 2 个数值字段才能进行相关性分析</p>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      <InsightsPanel insights={d.insights} />
-    </div>
-  );
-}
-
-function CorrelationResult({ data }: { data: Record<string, unknown> }) {
-  const d = data as { matrix: Record<string, unknown>[]; columns: string[]; strong_pairs: { col_a: string; col_b: string; correlation: number; strength: string }[]; insights: string[] };
-
-  return (
-    <div className="space-y-6">
-      {d.strong_pairs.length > 0 && (
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h3 className="text-sm font-medium mb-3">强相关对</h3>
-          <div className="space-y-2">
-            {d.strong_pairs.map((p, i) => (
-              <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30">
-                <span className="text-sm font-medium">{p.col_a}</span>
-                <span className="text-xs text-muted-foreground">↔</span>
-                <span className="text-sm font-medium">{p.col_b}</span>
-                <span className={`ml-auto text-xs px-2 py-0.5 rounded ${p.correlation > 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                  r={p.correlation} ({p.strength})
-                </span>
+        {/* Anomaly Detection */}
+        {activeTab === "anomaly" && (
+          <div className="space-y-6">
+            {timeSeries.length > 0 && numericCols.length > 0 && (
+              <div className="bg-card border border-border rounded-xl p-5">
+                <h3 className="text-sm font-medium mb-4">趋势图（异常点标红）</h3>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={timeSeries}>
+                      <CartesianGrid strokeDasharray="none" stroke="hsl(240 5% 16%)" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: "hsl(240 5% 45%)" }} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={tipStyle} />
+                      <Line type="monotone" dataKey={numericCols[0]} stroke="hsl(240 70% 60%)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
+            )}
+
+            {Object.entries(anomalies).map(([col, items]) => (
+              items.length > 0 && (
+                <div key={col} className="bg-card border border-border rounded-xl p-5">
+                  <h3 className="text-sm font-medium mb-3">{col} — {items.length} 个异常值</h3>
+                  <div className="space-y-1">
+                    {items.slice(0, 10).map((a, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm py-1.5 border-b border-border/20">
+                        <span className="text-muted-foreground">第 {a.index + 1} 行</span>
+                        <span className="font-medium">{a.value}</span>
+                        <span className="text-destructive text-xs">Z={a.zscore.toFixed(1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Correlation Heatmap Table */}
-      <div className="bg-card border border-border rounded-xl p-5 overflow-x-auto">
-        <h3 className="text-sm font-medium mb-3">相关性矩阵</h3>
-        <table className="text-xs">
-          <thead>
-            <tr>
-              <th className="p-2" />
-              {d.columns.map(col => <th key={col} className="p-2 text-muted-foreground font-medium truncate max-w-[100px]">{col}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {d.matrix.map((row: Record<string, unknown>) => (
-              <tr key={row.column as string}>
-                <td className="p-2 text-muted-foreground font-medium">{row.column as string}</td>
-                {d.columns.map(col => {
-                  const val = row[col] as number;
-                  const bg = val > 0 ? `rgba(34, 197, 94, ${Math.abs(val) * 0.5})` : `rgba(239, 68, 68, ${Math.abs(val) * 0.5})`;
-                  return (
-                    <td key={col} className="p-2 text-center" style={{ backgroundColor: bg }}>
-                      {val}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <InsightsPanel insights={d.insights} />
-    </div>
-  );
-}
-
-function AnomalyResult({ data }: { data: Record<string, unknown> }) {
-  const d = data as { total: number; anomaly_count: number; anomaly_pct: number; bounds: { lower: number; upper: number }; mean: number; std: number; anomaly_values: { index: number; value: number }[]; method: string };
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="总数据" value={d.total.toLocaleString()} />
-        <StatCard label="异常数" value={d.anomaly_count.toString()} accent />
-        <StatCard label="异常率" value={`${d.anomaly_pct}%`} accent />
-        <StatCard label="正常范围" value={`[${d.bounds.lower}, ${d.bounds.upper}]`} />
-        <StatCard label="均值 ± 标准差" value={`${d.mean} ± ${d.std}`} />
-      </div>
-
-      {d.anomaly_values.length > 0 && (
-        <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-5 py-3 border-b border-border">
-            <h3 className="text-sm font-medium">异常值列表（前 {d.anomaly_values.length} 个）</h3>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/50">
-                <th className="px-5 py-2 text-left text-muted-foreground">行号</th>
-                <th className="px-5 py-2 text-right text-muted-foreground">值</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.anomaly_values.map(v => (
-                <tr key={v.index} className="border-b border-border/20 hover:bg-secondary/20">
-                  <td className="px-5 py-2 text-muted-foreground">#{v.index}</td>
-                  <td className="px-5 py-2 text-right font-mono text-destructive">{v.value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-4">
-      <p className={`text-2xl font-bold font-display ${accent ? "text-destructive" : "text-foreground"}`}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-1">{label}</p>
-    </div>
-  );
-}
-
-function InsightsPanel({ insights }: { insights: string[] }) {
-  if (!insights || insights.length === 0) return null;
-  return (
-    <div className="bg-card border border-border rounded-xl p-5">
-      <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-        💡 分析洞察
-      </h3>
-      <div className="space-y-2">
-        {insights.map((insight, i) => (
-          <p key={i} className="text-sm text-muted-foreground leading-relaxed">{insight}</p>
-        ))}
+        )}
       </div>
     </div>
   );
