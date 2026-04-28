@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   getProjects, saveProject, deleteProject as deleteProj,
-  saveProjectData, parseCSV, type Project
+  saveProjectData, parseCSV, readFileWithEncoding, type Project
 } from "../lib/storage";
 
 export function ProjectsPage() {
@@ -23,7 +23,7 @@ export function ProjectsPage() {
   const handleFile = useCallback(async (file: File) => {
     setUploading(true);
     try {
-      const text = await file.text();
+      const text = await readFileWithEncoding(file);
       const { headers, rows } = parseCSV(text);
       if (rows.length === 0) throw new Error("无法解析文件，请确认是 CSV 格式");
 

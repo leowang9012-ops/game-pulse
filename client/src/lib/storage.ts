@@ -99,6 +99,44 @@ export async function saveProjectData(data: ProjectData): Promise<void> {
   });
 }
 
+// ── Encoding detection ──
+
+export async function readFileWithEncoding(file: File): Promise<string> {
+  // Try UTF-8 first
+  const utf8Text = await file.text();
+  // Check if UTF-8 produces garbled Chinese (common sign: lots of replacement chars or \uFFFD)
+  const hasGarbled = /\uFFFD/.test(utf8Text) || /é|å|æ|ç|è|\x80-\x9f/.test(utf8Text.slice(0, 500));
+  
+  if (!hasGarbled) {
+    // UTF-8 looks fine, check if it has Chinese characters
+    const sample = utf8Text.slice(0, 2000);
+    const hasChinese = /[\u4e00-\u9fff]/.test(sample);
+    const hasGarbledChinese = /[\u00c0-\u00ff]{2,}/.test(sample) && !hasChinese;
+    
+    if (!hasGarbledChinese) return utf8Text;
+  }
+  
+  // Try GBK
+  try {
+    const buffer = await file.arrayBuffer();
+    const gbkText = new TextDecoder('gbk').decode(buffer);
+    const gbkSample = gbkText.slice(0, 2000);
+    const hasChinese = /[\u4e00-\u9fff]/.test(gbkSample);
+    if (hasChinese) return gbkText;
+  } catch {}
+  
+  // Try GB18030 (superset of GBK)
+  try {
+    const buffer = await file.arrayBuffer();
+    const gbText = new TextDecoder('gb18030').decode(buffer);
+    const gbSample = gbText.slice(0, 2000);
+    const hasChinese = /[\u4e00-\u9fff]/.test(gbSample);
+    if (hasChinese) return gbText;
+  } catch {}
+  
+  return utf8Text; // fallback
+}
+
 // ── CSV Parser ──
 
 export function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
