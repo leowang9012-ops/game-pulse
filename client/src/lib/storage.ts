@@ -101,40 +101,70 @@ export async function saveProjectData(data: ProjectData): Promise<void> {
 
 // ── Encoding detection ──
 
+/**
+ * Check if text looks like garbled Chinese (UTF-8 bytes decoded as wrong encoding).
+ * Scans for common patterns: consecutive Latin-extended chars, replacement chars,
+ * or CJK chars that don't form meaningful Chinese text.
+ */
+function isGarbledText(text: string): boolean {
+  const sample = text.slice(0, 3000);
+  // Replacement character = clear sign of encoding mismatch
+  if (/\uFFFD/.test(sample)) return true;
+  // Consecutive Latin-extended chars (Ã©, Ã¤, etc.) = classic GBK-as-UTF-8 pattern
+  if (/[\u00c0-\u00ff]{3,}/.test(sample)) return true;
+  // Check for common garbled CJK-from-GBK patterns:
+  // GBK high bytes often produce U+00C0-U+00FF followed by U+0080-U+00BF
+  if (/[\u0080-\u00bf][\u00c0-\u00ff]|[\u00c0-\u00ff][\u0080-\u00bf]/.test(sample)) return true;
+  return false;
+}
+
+/**
+ * Score how "Chinese" a text looks by counting common Chinese characters.
+ * Higher score = more likely correct encoding.
+ */
+function chineseScore(text: string): number {
+  const sample = text.slice(0, 5000);
+  const cjkMatches = sample.match(/[\u4e00-\u9fff]/g);
+  return cjkMatches ? cjkMatches.length : 0;
+}
+
 export async function readFileWithEncoding(file: File): Promise<string> {
-  // Try UTF-8 first
-  const utf8Text = await file.text();
-  // Check if UTF-8 produces garbled Chinese (common sign: lots of replacement chars or \uFFFD)
-  const hasGarbled = /\uFFFD/.test(utf8Text) || /é|å|æ|ç|è|\x80-\x9f/.test(utf8Text.slice(0, 500));
+  const buffer = await file.arrayBuffer();
   
-  if (!hasGarbled) {
-    // UTF-8 looks fine, check if it has Chinese characters
-    const sample = utf8Text.slice(0, 2000);
-    const hasChinese = /[\u4e00-\u9fff]/.test(sample);
-    const hasGarbledChinese = /[\u00c0-\u00ff]{2,}/.test(sample) && !hasChinese;
+  // Try UTF-8 first
+  const utf8Text = new TextDecoder('utf-8').decode(buffer);
+  
+  if (!isGarbledText(utf8Text)) {
+    // UTF-8 looks clean — but could still be GBK that happens to decode as valid UTF-8
+    // Check if it actually contains Chinese characters
+    const score = chineseScore(utf8Text);
+    if (score > 10) return utf8Text; // Has meaningful Chinese content
     
-    if (!hasGarbledChinese) return utf8Text;
+    // Low Chinese content — could be ASCII-only (valid) or garbled GBK
+    // Try GBK and compare
+    try {
+      const gbkText = new TextDecoder('gbk').decode(buffer);
+      const gbkScore = chineseScore(gbkText);
+      if (gbkScore > score + 5) return gbkText; // GBK produced significantly more Chinese
+    } catch {}
+    
+    return utf8Text; // UTF-8 is fine (probably ASCII or has some Chinese)
   }
   
-  // Try GBK
+  // UTF-8 looks garbled — try GBK
   try {
-    const buffer = await file.arrayBuffer();
     const gbkText = new TextDecoder('gbk').decode(buffer);
-    const gbkSample = gbkText.slice(0, 2000);
-    const hasChinese = /[\u4e00-\u9fff]/.test(gbkSample);
-    if (hasChinese) return gbkText;
+    if (chineseScore(gbkText) > 5) return gbkText;
   } catch {}
   
   // Try GB18030 (superset of GBK)
   try {
-    const buffer = await file.arrayBuffer();
     const gbText = new TextDecoder('gb18030').decode(buffer);
-    const gbSample = gbText.slice(0, 2000);
-    const hasChinese = /[\u4e00-\u9fff]/.test(gbSample);
-    if (hasChinese) return gbText;
+    if (chineseScore(gbText) > 5) return gbText;
   } catch {}
   
-  return utf8Text; // fallback
+  // Fallback: return UTF-8 text
+  return utf8Text;
 }
 
 // ── Excel Parser ──
