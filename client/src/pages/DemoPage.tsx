@@ -10,6 +10,7 @@ import {
 import {
   STATS, DAILY_OPS, RETENTION_HISTORY, CHANNEL_RETENTION
 } from "@/data/realData";
+import { ProjectSwitcher } from "../components/ProjectSwitcher";
 
 type Tab = "dashboard" | "predict" | "analysis";
 
@@ -36,6 +37,12 @@ export function DemoPage({ defaultTab }: { defaultTab?: Tab } = {}) {
         <div className="max-w-[1400px] mx-auto px-8 py-5">
           <div className="flex items-center justify-between">
             <div>
+              <div className="flex items-center gap-3 mb-1">
+                <a href="/" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+                  ← 返回
+                </a>
+                <ProjectSwitcher currentId="demo" currentPage="dashboard" />
+              </div>
               <h1 className="text-xl font-bold font-display flex items-center gap-2">
                 <Activity className="w-5 h-5 text-primary" />
                 GamePulse · 街篮2

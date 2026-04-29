@@ -15,6 +15,13 @@ export interface BuiltinProject {
 
 export const BUILTIN_PROJECTS: BuiltinProject[] = [
   {
+    id: "demo",
+    name: "街篮2 · Q1 2024",
+    description: "91天 · DAU/收入/ARPU/留存 · 真实样本",
+    headers: [],
+    rows: [],
+  },
+  {
     id: "zt2",
     name: "征途2手游",
     description: "2020年1月-2020年11月 · 月度运营数据 · 328行×16列",
