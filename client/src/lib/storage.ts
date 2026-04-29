@@ -189,8 +189,8 @@ export async function parseExcel(buffer: ArrayBuffer): Promise<{ headers: string
     }
   }
   
-  // Second pass: use the detected header row
-  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: headerIdx });
+  // Second pass: use the detected header row, convert Excel dates to JS dates
+  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: headerIdx, cellDates: true });
   if (json.length === 0) return { headers: [], rows: [] };
   
   const headers = Object.keys(json[0]);
@@ -198,7 +198,14 @@ export async function parseExcel(buffer: ArrayBuffer): Promise<{ headers: string
     const r: Record<string, string> = {};
     headers.forEach(h => {
       const v = row[h];
-      r[h] = v == null ? "" : String(v);
+      if (v == null) {
+        r[h] = "";
+      } else if (v instanceof Date) {
+        // Format Excel dates as YYYY-MM-DD
+        r[h] = v.toISOString().split("T")[0];
+      } else {
+        r[h] = String(v);
+      }
     });
     return r;
   });
