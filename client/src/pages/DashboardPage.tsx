@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { BarChart3, ArrowLeft, TrendingUp, Database, Microscope } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { getProjectData, getProjects } from "../lib/storage";
+import { ProjectSwitcher } from "../components/ProjectSwitcher";
 
 const tipStyle = { backgroundColor: "hsl(240 10% 8%)", border: "1px solid hsl(240 5% 20%)", borderRadius: "8px", fontSize: "12px" } as const;
 
@@ -86,9 +87,12 @@ export function DashboardPage() {
       <header className="border-b border-border/50 sticky top-0 z-30 bg-background/80 backdrop-blur-xl">
         <div className="max-w-[1400px] mx-auto px-8 py-5 flex items-center justify-between">
           <div>
-            <Link to="/" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
-              <ArrowLeft className="w-4 h-4" /> 返回项目列表
-            </Link>
+            <div className="flex items-center gap-3 mb-2">
+              <Link to="/" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="w-4 h-4" /> 返回
+              </Link>
+              <ProjectSwitcher currentId={projectId} currentPage="dashboard" />
+            </div>
             <h1 className="text-xl font-bold font-display flex items-center gap-2">
               <Database className="w-5 h-5 text-primary" /> {projectName}
             </h1>
