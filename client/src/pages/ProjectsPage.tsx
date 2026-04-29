@@ -8,6 +8,7 @@ import {
   getProjects, saveProject, deleteProject as deleteProj,
   saveProjectData, parseCSV, readFileWithEncoding, type Project
 } from "../lib/storage";
+import { BUILTIN_PROJECTS } from "../data/builtin";
 
 export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -81,9 +82,9 @@ export function ProjectsPage() {
       </header>
 
       <div className="max-w-[1200px] mx-auto px-8 py-8 space-y-6">
-        {/* Demo Project */}
+        {/* Built-in Projects */}
         <div className="space-y-2">
-          <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">示例项目</h2>
+          <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">内置项目</h2>
           <div
             onClick={() => navigate("/dashboard/demo")}
             className="bg-card border border-border rounded-xl p-5 flex items-center justify-between hover:border-primary/40 transition-colors cursor-pointer group"
@@ -103,6 +104,28 @@ export function ProjectsPage() {
               <span className="px-3 py-1.5 text-xs bg-secondary rounded-lg flex items-center gap-1"><Microscope className="w-3 h-3" /> 分析</span>
             </div>
           </div>
+          {BUILTIN_PROJECTS.map(bp => (
+            <div
+              key={bp.id}
+              onClick={() => navigate(`/dashboard/${bp.id}`)}
+              className="bg-card border border-border rounded-xl p-5 flex items-center justify-between hover:border-primary/40 transition-colors cursor-pointer group"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <FileSpreadsheet className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{bp.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{bp.description}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="px-3 py-1.5 text-xs bg-secondary rounded-lg flex items-center gap-1"><BarChart3 className="w-3 h-3" /> 看板</span>
+                <span className="px-3 py-1.5 text-xs bg-secondary rounded-lg flex items-center gap-1"><TrendingUp className="w-3 h-3" /> 预测</span>
+                <span className="px-3 py-1.5 text-xs bg-secondary rounded-lg flex items-center gap-1"><Microscope className="w-3 h-3" /> 分析</span>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* User Projects */}

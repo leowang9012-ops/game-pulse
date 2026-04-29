@@ -3,6 +3,8 @@
  * Replaces localStorage to support larger datasets (50MB+ vs 5MB).
  */
 
+import { getBuiltinProjectData } from "../data/builtin";
+
 const DB_NAME = "gamepulse";
 const DB_VERSION = 1;
 const STORE_PROJECTS = "projects";
@@ -78,6 +80,11 @@ export interface ProjectData {
 }
 
 export async function getProjectData(projectId: string): Promise<ProjectData | null> {
+  // Check built-in projects first
+  const builtin = getBuiltinProjectData(projectId);
+  if (builtin) return { id: projectId, ...builtin };
+  
+  // Fall back to IndexedDB
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_DATA, "readonly");
