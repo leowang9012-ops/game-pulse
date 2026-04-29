@@ -131,39 +131,39 @@ function chineseScore(text: string): number {
 export async function readFileWithEncoding(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
   
-  // Try UTF-8 first
+  // Decode with all three encodings
   const utf8Text = new TextDecoder('utf-8').decode(buffer);
+  let gbkText = "";
+  let gb18030Text = "";
   
-  if (!isGarbledText(utf8Text)) {
-    // UTF-8 looks clean — but could still be GBK that happens to decode as valid UTF-8
-    // Check if it actually contains Chinese characters
-    const score = chineseScore(utf8Text);
-    if (score > 10) return utf8Text; // Has meaningful Chinese content
-    
-    // Low Chinese content — could be ASCII-only (valid) or garbled GBK
-    // Try GBK and compare
-    try {
-      const gbkText = new TextDecoder('gbk').decode(buffer);
-      const gbkScore = chineseScore(gbkText);
-      if (gbkScore > score + 5) return gbkText; // GBK produced significantly more Chinese
-    } catch {}
-    
-    return utf8Text; // UTF-8 is fine (probably ASCII or has some Chinese)
+  try { gbkText = new TextDecoder('gbk').decode(buffer); } catch {}
+  try { gb18030Text = new TextDecoder('gb18030').decode(buffer); } catch {}
+  
+  // Score each decoding
+  const utf8Score = chineseScore(utf8Text);
+  const gbkScore = chineseScore(gbkText);
+  const gb18030Score = chineseScore(gb18030Text);
+  
+  // Check for garbled indicators in UTF-8
+  const utf8Garbled = isGarbledText(utf8Text);
+  
+  // Pick the best encoding:
+  // 1. If UTF-8 is garbled, prefer GBK/GB18030
+  // 2. Otherwise, pick whichever has the most Chinese characters
+  // 3. Require a significant margin to avoid false switches on pure ASCII files
+  if (gbkScore > utf8Score + 3 && gbkScore > 5) {
+    return gbkText;
+  }
+  if (gb18030Score > utf8Score + 3 && gb18030Score > 5) {
+    return gb18030Text;
+  }
+  if (utf8Garbled && gbkScore > 5) {
+    return gbkText;
+  }
+  if (utf8Garbled && gb18030Score > 5) {
+    return gb18030Text;
   }
   
-  // UTF-8 looks garbled — try GBK
-  try {
-    const gbkText = new TextDecoder('gbk').decode(buffer);
-    if (chineseScore(gbkText) > 5) return gbkText;
-  } catch {}
-  
-  // Try GB18030 (superset of GBK)
-  try {
-    const gbText = new TextDecoder('gb18030').decode(buffer);
-    if (chineseScore(gbText) > 5) return gbText;
-  } catch {}
-  
-  // Fallback: return UTF-8 text
   return utf8Text;
 }
 
