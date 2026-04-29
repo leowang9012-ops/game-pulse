@@ -176,6 +176,44 @@ export function DashboardPage() {
           </div>
         )}
 
+        {/* Column diagnostics */}
+        <div className="bg-card border border-border rounded-xl p-5">
+          <h3 className="text-sm font-medium mb-3">列诊断</h3>
+          <div className="text-xs space-y-1">
+            <p><span className="text-muted-foreground">日期列：</span>{dateCol || <span className="text-warning">未检测到</span>}</p>
+            <p><span className="text-muted-foreground">数值列：</span>{numericCols.length > 0 ? numericCols.join(", ") : <span className="text-warning">未检测到</span>}</p>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border/50">
+                  <th className="px-2 py-1.5 text-left text-muted-foreground">列名</th>
+                  <th className="px-2 py-1.5 text-left text-muted-foreground">示例值</th>
+                  <th className="px-2 py-1.5 text-center text-muted-foreground">数值?</th>
+                  <th className="px-2 py-1.5 text-center text-muted-foreground">日期?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.headers.map(h => {
+                  const samples = data.rows.slice(0, 5).map(r => r[h]).filter(Boolean);
+                  const numCount = data.rows.filter(r => r[h] && !isNaN(Number(r[h]))).length;
+                  const isNumeric = numCount > data.rows.length * 0.3;
+                  const dateCount = data.rows.filter(r => r[h] && !isNaN(Date.parse(r[h]))).length;
+                  const isDate = dateCount > data.rows.length * 0.5;
+                  return (
+                    <tr key={h} className="border-b border-border/20">
+                      <td className="px-2 py-1.5 font-medium">{h}</td>
+                      <td className="px-2 py-1.5 text-muted-foreground max-w-[200px] truncate">{samples.join(", ")}</td>
+                      <td className="px-2 py-1.5 text-center">{isNumeric ? <span className="text-success">✓ {numCount}</span> : <span className="text-muted-foreground">✗</span>}</td>
+                      <td className="px-2 py-1.5 text-center">{isDate ? <span className="text-success">✓ {dateCount}</span> : <span className="text-muted-foreground">✗</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-border flex items-center justify-between">
             <h3 className="text-sm font-medium">数据预览</h3>
