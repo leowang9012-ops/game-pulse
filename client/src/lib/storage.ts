@@ -173,7 +173,24 @@ export async function parseExcel(buffer: ArrayBuffer): Promise<{ headers: string
   const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  
+  // First pass: find the header row (the one with the most non-empty cells)
+  const allRows = XLSX.utils.sheet_to_json<Record<string, unknown>[]>(sheet, { header: 1, defval: "" });
+  if (allRows.length === 0) return { headers: [], rows: [] };
+  
+  let headerIdx = 0;
+  let maxCells = 0;
+  for (let i = 0; i < Math.min(allRows.length, 10); i++) {
+    const row = allRows[i] as Record<string, unknown>[];
+    const nonEmpty = row.filter(v => v !== "" && v != null).length;
+    if (nonEmpty > maxCells) {
+      maxCells = nonEmpty;
+      headerIdx = i;
+    }
+  }
+  
+  // Second pass: use the detected header row
+  const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: headerIdx });
   if (json.length === 0) return { headers: [], rows: [] };
   
   const headers = Object.keys(json[0]);
